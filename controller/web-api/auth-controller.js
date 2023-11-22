@@ -1,7 +1,7 @@
 const Validator = require("fastest-validator");
 const bcrypt = require("bcrypt");
 const User = require("../../models/user-model");
-// const UserToken = require("../../models/user-token-model");
+const UserToken = require("../../models/user-token-model");
 const UserRolePivot = require("../../models/user-role-pivot");
 // const UserRoleCheck = require("../../helpers/user-role-check-helper");
 const sequelize = require("../../utilities/database");
@@ -11,6 +11,7 @@ const {
   hashPassword,
   generateToken,
   userDetails,
+  isPhoneNumber,
 } = require("../../helpers/auth-helpers");
 const { getRoleId } = require("../../helpers/user-role-check-helpers");
 
@@ -400,7 +401,11 @@ exports.login = async (request, response) => {
         where: whereClause,
       });
       if (user) {
-        if (await bcrypt.compare(data.password, user.password)) {
+        const isvalidPassword = await bcrypt.compare(
+          data.password,
+          user.password
+        );
+        if (isvalidPassword) {
           const userData = {
             userId: user.id,
             validTill: new Date().setDate(
@@ -420,13 +425,17 @@ exports.login = async (request, response) => {
             });
           } else {
             return response.status(500).json({
-              message: "Unable to generate JWT token",
+              message: "Unable to generate JWT token!!",
             });
           }
+        } else {
+          return response.status(404).json({
+            message: "Please check your credential!!",
+          });
         }
       } else {
         return response.status(404).json({
-          message: "Please check your credential",
+          message: "User does not exists!!",
         });
       }
     }
@@ -436,6 +445,387 @@ exports.login = async (request, response) => {
     return response.status(500).json({
       message: "serverError",
       error,
+    });
+  }
+};
+
+exports.me = async (request, response) => {
+  try {
+    // Return Response
+    return response.status(200).json({
+      user: await userDetails(request.userData),
+    });
+  } catch (error) {
+    // Log Error And Return Response
+    console.log("web-api -> auth-controller -> me -> ", error.message);
+    return response.status(500).json({
+      message: "serverError",
+      error,
+    });
+  }
+};
+exports.logout = async (request, response) => {
+  try {
+    const token = request.headers.authorization.split(" ")[1];
+    await UserToken.destroy({
+      where: {
+        userId: request.userData.id,
+        userToken: token,
+      },
+    });
+    return response.status(200).json({
+      message: "Logout Successfull !",
+    });
+  } catch (error) {
+    // Log Error And Return Response
+    console.log("web-api -> auth-controller -> logout -> ", error);
+    return response.status(500).json({
+      message: "serverError",
+      error: error.message,
+    });
+  }
+};
+
+exports.requestOTP = async (request, response) => {
+  try {
+    // Preparing Data
+    let data = {
+      phoneCountryCode: request.body.phoneCountryCode,
+      phoneNumber: request.body.phoneNumber,
+    };
+
+    // Preparing Validation Schema
+    const schema = {
+      phoneCountryCode: {
+        type: "string",
+        optional: true,
+        default: null,
+      },
+      phoneNumber: {
+        type: "string",
+        optional: false,
+      },
+    };
+
+    // Creating Validator Object And Validating
+    const validation = new Validator();
+    const validationResponse = validation.validate(data, schema);
+
+    // Send Response On Validation Failed
+    if (validationResponse !== true) {
+      return response.status(400).json({
+        message: "Validation Error",
+        errors: validationResponse,
+      });
+    } else {
+      // Check Unique Identity Type
+      const isPhone = isPhoneNumber(data.phoneNumber);
+
+      // Fetch The User Details
+      let user = null;
+      if (isPhone) {
+        user = await User.findOne({
+          where: {
+            phoneNumber: data.phoneNumber,
+            isBlocked: false,
+          },
+        });
+      } else {
+        return response.status(403).json({
+          message: "Please enter valid phone number",
+        });
+      }
+      if (user) {
+        // Check If User Exists
+        await generateOTP(user.id, null, true);
+
+        // Starting SQL Transaction
+        const transaction = await sequelize.transaction();
+        try {
+          // Generate And Send The OTP
+          const otpStatus = await generateOTP(user.id, transaction);
+          if (otpStatus) {
+            // Commit The DB Transaction
+            transaction.commit();
+            // Return The Response
+
+            return response.status(200).json({
+              message: "OTP sent successfully",
+            });
+          } else {
+            // Rollback The DB
+            transaction.rollback();
+            // Return The Response
+            return response.status(500).json({
+              message: "Unable To generate OTP",
+            });
+          }
+        } catch (error) {
+          // Rollback The DB Transaction
+          transaction.rollback();
+          console.log(error);
+          // Return The Response
+          return response.status(500).json({
+            message: "Unable To Process",
+            error: error.message,
+          });
+        }
+      } else {
+        return response.status(404).json({
+          message: "User Does Not Exist",
+        });
+      }
+    }
+  } catch (error) {
+    // Log Error And Return Response
+    console.log(
+      "web-api -> forgot-password-controller -> requestOtp -> ",
+      error.message
+    );
+    return response.status(500).json({
+      message: "Server Error",
+    });
+  }
+};
+
+exports.resetPassword = async (request, response) => {
+  try {
+    // Preparing Data
+    let data = {
+      phoneCountryCode: request.body.phoneCountryCode,
+      phoneNumber: request.body.phoneNumber,
+      newPassword: request.body.newPassword,
+      OTP: request.body.OTP,
+    };
+
+    // Preparing Validation Schema
+    const schema = {
+      phoneCountryCode: {
+        type: "string",
+        optional: true,
+      },
+      phoneNumber: {
+        type: "string",
+        optional: false,
+      },
+      newPassword: {
+        type: "string",
+        optional: false,
+        min: 8,
+        max: 32,
+      },
+      OTP: {
+        type: "string",
+        optional: false,
+      },
+    };
+
+    // Creating Validator Object And Validating
+    const validation = new Validator();
+    const validationResponse = validation.validate(data, schema);
+
+    // Send Response On Validation Failed
+    if (validationResponse !== true) {
+      return response.status(400).json({
+        message: "Validation Error",
+        errors: validationResponse,
+      });
+    } else {
+      // Check Unique Identity Type
+      const isPhone = isPhoneNumber(data.phoneNumber);
+      // Verify OTP And Fetch The User Details
+      let user = null;
+      if (isPhone) {
+        user = await User.findOne({
+          where: {
+            phoneNumber: data.phoneNumber,
+            phoneOTP: data.OTP,
+            isBlocked: false,
+          },
+        });
+      } else {
+        return response.status(403).json({
+          message: "Please enter valid phone number",
+        });
+      }
+      // Check If User Exists
+      if (user) {
+        try {
+          // Change The Password And Save It
+          const hashedPassword = await hashPassword(data.newPassword);
+          if (hashedPassword) {
+            // Starting SQL Transaction
+            const transaction = await sequelize.transaction();
+            try {
+              // Change The Password
+              user.password = hashedPassword;
+              user.phoneOTP = null;
+              user.save();
+              // Logout From All Devices
+              await UserToken.destroy({
+                where: {
+                  userId: user.id,
+                },
+                transaction,
+              });
+              // Commit The DB Transaction
+              transaction.commit();
+              // Return The Response
+              return response.status(200).json({
+                message: "Password Change Successfully",
+              });
+            } catch (error) {
+              // Rollback The DB Transaction
+              transaction.rollback();
+              console.log(error);
+              // Return The Response
+              return response.status(500).json({
+                message: "Unable To Change Password",
+                error,
+              });
+            }
+          } else {
+            // Return The Response
+            return response.status(500).json({
+              message: "Failed To Encrypt",
+            });
+          }
+        } catch (error) {
+          // Rollback The DB Transaction
+          transaction.rollback();
+          console.log(error);
+          // Return The Response
+          return response.status(500).json({
+            message: "Unable To Process",
+            error: error.message,
+          });
+        }
+      } else {
+        return response.status(404).json({
+          message: "User does not exists or otp request does not send!",
+        });
+      }
+    }
+  } catch (error) {
+    // Log Error And Return Response
+    console.log(
+      "web-api -> folower-controller -> resetPassword -> ",
+      error.message
+    );
+    return response.status(500).json({
+      message: "Server Error",
+      error: error.message,
+    });
+  }
+};
+
+exports.changePassword = async (request, response) => {
+  try {
+    //Preparing Data
+    let data = {
+      currentPassword: request.body.currentPassword,
+      newPassword: request.body.newPassword,
+    };
+    //Preparing Validation Schema
+    const schema = {
+      currentPassword: {
+        type: "string",
+        optional: false,
+      },
+      newPassword: {
+        type: "string",
+        optional: false,
+      },
+    };
+
+    // Creating Validator Object And Validating
+    const validation = new Validator();
+    const validationResponse = validation.validate(data, schema);
+
+    if (validationResponse !== true) {
+      return response.status(400).json({
+        message: "Validation Error",
+        errors: validationResponse,
+      });
+    } else {
+      //Comparing the current password of the user
+      bcrypt.compare(
+        data.currentPassword,
+        request.userData.password,
+        async function (error, result) {
+          if (result) {
+            // Find the user
+            const user = await User.findOne({
+              where: {
+                id: request.userData.id,
+              },
+            });
+            // Check If User Exists
+            if (user) {
+              const textPassword = data.newPassword;
+              const hashedPassword = await hashPassword(textPassword);
+              //Changing The Password And Updating It
+              if (hashedPassword) {
+                const transaction = await sequelize.transaction();
+                try {
+                  //Change the password
+                  user.password = hashedPassword;
+                  user.save();
+                  // Logout From All Devices
+                  await UserToken.destroy({
+                    where: {
+                      userId: user.id,
+                      userToken: {
+                        [Op.ne]: request.token,
+                      },
+                    },
+                    transaction,
+                  });
+                  // Commit The DB Transaction
+                  transaction.commit();
+                  // Return The Response
+                  return response.status(200).json({
+                    message: "Pasword Successfully Change",
+                  });
+                } catch (error) {
+                  // Rollback The DB Transaction
+                  transaction.rollback();
+                  console.log(error);
+                  // Return The Response
+                  return response.status(500).json({
+                    message: "Unable To Process",
+
+                    error,
+                  });
+                }
+              } else {
+                // Return The Response
+                return response.status(500).json({
+                  message: "Failed To Encrypt",
+                  request,
+                });
+              }
+            } else {
+              return response.status(404).json({
+                message: "user DoesNot Exist",
+              });
+            }
+          } else {
+            response.status(400).json({
+              message: "InCorrect Password",
+            });
+          }
+        }
+      );
+    }
+  } catch (error) {
+    // Log Error And Return Response
+    console.log(
+      "web-api -> auth-controller -> changePassword -> ",
+      error.message
+    );
+    return response.status(500).json({
+      message: "Server Error",
     });
   }
 };
