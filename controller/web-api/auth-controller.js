@@ -25,6 +25,7 @@ exports.register = async (request, response) => {
       phoneCountryCode: request.body.phoneCountryCode,
       phoneNumber: request.body.phoneNumber,
       password: request.body.password,
+      userRole: request.body.userRole,
     };
     // Preparing Validation Schema
     const schema = {
@@ -69,6 +70,12 @@ exports.register = async (request, response) => {
         messages: {
           stringMin: "Password Min Length",
         },
+      },
+      userRole: {
+        type: "enum",
+        optional: true,
+        values: ["Consumer", "Administrator", "Saler"],
+        default: "Consumer",
       },
     };
 
@@ -132,14 +139,24 @@ exports.register = async (request, response) => {
         try {
           // Create User Section
           user = await User.create(data, { transaction });
-          // Assign The Consumer Role
-          await UserRolePivot.create(
-            {
-              userId: user.id,
+          const roleData = {
+            userId: user.id,
+          };
+          if (data.userRole === "Administrator") {
+            Object.assign(roleData, {
+              roleId: await getRoleId("Administrator"),
+            });
+          } else if (data.userRole === "Saler") {
+            Object.assign(roleData, {
+              roleId: await getRoleId("Saler"),
+            });
+          } else {
+            Object.assign(roleData, {
               roleId: await getRoleId("Consumer"),
-            },
-            { transaction }
-          );
+            });
+          }
+          // Assign The Consumer Role
+          await UserRolePivot.create(roleData, { transaction });
           await transaction.commit();
           await generateOTP(user.id, null, true);
           return response.status(200).json({
@@ -826,6 +843,80 @@ exports.changePassword = async (request, response) => {
     );
     return response.status(500).json({
       message: "Server Error",
+    });
+  }
+};
+exports.setProfileRole = async (request, response) => {
+  try {
+    // Preparing Data
+    let data = {
+      profileRole: request.body.profileRole,
+      userId: request.body.userId,
+    };
+
+    // Preparing Validation Schema
+    const schema = {
+      profileRole: {
+        type: "enum",
+        optional: false,
+        values: ["Consumer", "Administrator", "Saler"],
+      },
+      userId: {
+        type: "string",
+        optional: false,
+      },
+    };
+
+    // Creating Validator Object And Validating
+    const validation = new Validator();
+    const validationResponse = validation.validate(data, schema);
+
+    // Send Response On Validation Failed
+    if (validationResponse !== true) {
+      return response.status(400).json({
+        message: "Validation Error",
+        errors: validationResponse,
+      });
+    } else {
+      const userData = request.userData;
+      userData.userRole = data.profileRole;
+
+      // Begin The SQL Transaction
+      const transaction = await sequelize.transaction();
+      try {
+        if (!request.userData.Admin) {
+          // Return Response
+          return response.status(400).json({
+            message: "Your role dose not change this settings ,Contact Admin",
+          });
+        }
+        // Update User Object
+        await User.update(
+          {
+            userData,
+          },
+          {
+            where: {
+              id: data.userId,
+            },
+            transaction,
+          }
+        );
+      } catch (error) {
+        // Rollback The Transaction
+        await transaction.rollback();
+        // Return Response
+        return response.status(500).json({
+          message: error.message,
+        });
+      }
+    }
+  } catch (error) {
+    // Log Error And Return Response
+    console.log("web-api -> auth-controller -> setProfileState -> ", error);
+    return response.status(500).json({
+      message: "server Error",
+      error: error.message,
     });
   }
 };

@@ -3,6 +3,7 @@ const UserToken = require("../models/user-token-model");
 const bcrypt = require("bcrypt");
 const sequelize = require("../utilities/database");
 const jwt = require("jsonwebtoken");
+const Role = require("../models/role-model");
 exports.generateOTP = async (userId, transaction, registrationMail = false) => {
   const OTP = 123456;
   await User.update(
@@ -90,6 +91,20 @@ exports.isPhoneNumber = (phoneNumber) => {
     } else {
       return false;
     }
+  } else {
+    return false;
+  }
+};
+
+exports.getRoleId = async (roleTitle) => {
+  const userRole = await Role.findOne({
+    where: {
+      title: roleTitle,
+    },
+  });
+
+  if (userRole) {
+    return userRole.id;
   } else {
     return false;
   }

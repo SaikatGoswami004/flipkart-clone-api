@@ -11,6 +11,7 @@ const sequelize = require("./utilities/database");
 const DatabaseRelation = require("./database/database-relation");
 const { mountRoutes } = require("./routes/routes");
 const { initialSeeding } = require("./database/database-seed");
+const { adminMountRoutes } = require("./routes/admin/admin-routes");
 
 // Instantiate Express.JS
 const app = express();
@@ -31,6 +32,7 @@ DatabaseRelation.initializeRelation()
     initialSeeding();
     // Initialize Routes
     mountRoutes(app);
+    adminMountRoutes(app);
     // Sync Sequelize And Start The Server
     sequelize
       .sync({

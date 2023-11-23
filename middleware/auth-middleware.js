@@ -1,6 +1,8 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/user-model");
 const UserToken = require("../models/user-token-model");
+const { getRoleId } = require("../helpers/auth-helpers");
+const UserRolePivot = require("../models/user-role-pivot");
 
 async function authMiddleware(request, response, next) {
   try {
@@ -19,7 +21,18 @@ async function authMiddleware(request, response, next) {
         if (userToken) {
           const user = await User.findByPk(decodedToken.userId);
           if (user) {
+            const admistratorRoleId = await getRoleId("Administrator");
+            const userRole = await UserRolePivot.findOne({
+              where: {
+                userId: decodedToken.userId,
+                roleId: admistratorRoleId,
+              },
+            });
+
+            const isAdmin =
+              String(admistratorRoleId) === String(userRole?.roleId);
             request.userData = user;
+            request.userData.Admin = isAdmin;
             request.token = token;
           } else {
             return response.status(401).json({

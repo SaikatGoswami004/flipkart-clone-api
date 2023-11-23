@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const authController = require("../controller/web-api/auth-controller");
 const authMiddleware = require("../middleware/auth-middleware");
+
 // Registration Route
 router.post("/register", authController.register);
 // Verify OTP Route
@@ -14,7 +15,11 @@ router.post("/login", authController.login);
 router.get("/me", authMiddleware, authController.me);
 // Logout Route
 router.delete("/logout", authMiddleware, authController.logout);
-
+router.patch(
+  "/set-profile-role",
+  authMiddleware,
+  authController.setProfileRole
+);
 // Request OTP
 router.post("/forget-password/request-otp", authController.requestOTP);
 // reset password
