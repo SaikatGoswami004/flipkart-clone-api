@@ -11,7 +11,7 @@ router.patch(
   authMiddleware,
   userController.blockUnblockUser
 );
-//block or unblock user
+//Delete user
 router.delete(
   "/delete-user/:userId",
   authMiddleware,
