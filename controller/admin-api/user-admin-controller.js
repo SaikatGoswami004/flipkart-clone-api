@@ -2,7 +2,11 @@ const Validator = require("fastest-validator");
 const User = require("../../models/user-model");
 const { Op } = require("sequelize");
 const sequelize = require("../../utilities/database");
-const { userAttributes } = require("../../helpers/attributes-helpers");
+const {
+  userAttributes,
+  basicListPaginationDataPrepare,
+  basicListPaginationValidationSchema,
+} = require("../../helpers/attributes-helpers");
 
 exports.getAlluser = async (request, response) => {
   try {
@@ -37,29 +41,65 @@ exports.getAlluser = async (request, response) => {
         errors: validationResponse,
       });
     } else {
+      // Define Pagination Algorithm
+      let page = 0;
+      let size = 5;
+      const pageAsNumber = Number.parseInt(request.query.page);
+      const sizeAsNumber = Number.parseInt(request.query.size);
+      if (!Number.isNaN(pageAsNumber) && pageAsNumber > 0) {
+        page = pageAsNumber - 1;
+      }
+      if (!Number.isNaN(sizeAsNumber) && sizeAsNumber > 0) {
+        size = sizeAsNumber;
+      }
+      const options = {
+        order: [["createdAt", "desc"]],
+        attributes: userAttributes,
+        distinct: true,
+        limit: size,
+        offset: page * size,
+      };
       if (!data.role) {
-        const users = await User.findAll({
+        Object.assign(options, {
           where: {
             id: {
               [Op.ne]: request.userData.id,
             },
           },
-          order: [["createdAt", "desc"]],
-          attributes: userAttributes,
         });
-        return response.status(200).json(users);
+        const users = await User.findAndCountAll(options);
+
+        const totalItems = Number.parseInt(users.count);
+        response.status(200).json({
+          pagination: {
+            totalItems: totalItems,
+            perPage: size,
+            currentPage: page + 1,
+            lastPage: Math.ceil(totalItems / size),
+          },
+          products: users.rows,
+        });
       } else {
-        const users = await User.findAll({
+        Object.assign(options, {
           where: {
             id: {
               [Op.ne]: request.userData.id,
             },
             userRole: data.role,
           },
-          order: [["createdAt", "desc"]],
-          attributes: userAttributes,
         });
-        return response.status(200).json(users);
+        const users = await User.findAndCountAll(options);
+
+        const totalItems = Number.parseInt(users.count);
+        response.status(200).json({
+          pagination: {
+            totalItems: totalItems,
+            perPage: size,
+            currentPage: page + 1,
+            lastPage: Math.ceil(totalItems / size),
+          },
+          products: users.rows,
+        });
       }
     }
   } catch (error) {

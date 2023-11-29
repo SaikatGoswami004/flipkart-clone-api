@@ -2,9 +2,19 @@ const express = require("express");
 const router = express.Router();
 const authController = require("../controller/web-api/auth-controller");
 const authMiddleware = require("../middleware/auth-middleware");
+const { upload } = require("../helpers/file-upload-helpers");
 
 // Registration Route
-router.post("/register", authController.register);
+router.post(
+  "/register",
+  upload.fields([
+    {
+      name: "profileImage",
+      maxCount: 1,
+    },
+  ]),
+  authController.register
+);
 // Verify OTP Route
 router.post("/verify-otp", authController.verifyOTP);
 // Resend OTP Route

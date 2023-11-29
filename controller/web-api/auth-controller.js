@@ -14,6 +14,8 @@ const {
   isPhoneNumber,
 } = require("../../helpers/auth-helpers");
 const { getRoleId } = require("../../helpers/user-role-check-helpers");
+const crypto = require("crypto");
+const path = require("path");
 
 exports.register = async (request, response) => {
   try {
@@ -130,6 +132,38 @@ exports.register = async (request, response) => {
           });
         }
       }
+      const updateData = {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        emailAddress: data.emailAddress,
+        phoneCountryCode: data.phoneCountryCode,
+        phoneNumber: data.phoneNumber,
+        password: data.password,
+        userRole: data.userRole,
+      };
+      // Upload image If Provided
+      if (request.files["profileImage"]) {
+        // Generate Dynamic File Name And Save The Image Into S3 Storage
+        const customFileName = crypto.randomBytes(18).toString("hex");
+        const imageBufferData = request.files["profileImage"][0].buffer;
+        const imageExtension = path.extname(
+          request.files["profileImage"][0].originalname
+        );
+        const imageFileName =
+          `flipcart-clone/profileImage/` + customFileName + imageExtension;
+        const mimeType = request.files["profileImage"][0].mimetype;
+        // Save To S3
+        const params = {
+          Key: imageFileName,
+          Body: imageBufferData,
+          ACL: "public-read",
+          contentType: mimeType,
+        };
+
+        Object.assign(updateData, {
+          profileImage: params.Key,
+        });
+      }
       // Hash Password Before Saving To The DB
       const myPlaintextPassword = data.password;
       const hashedPassword = await hashPassword(myPlaintextPassword);
@@ -138,7 +172,7 @@ exports.register = async (request, response) => {
         data.password = hashedPassword;
         try {
           // Create User Section
-          user = await User.create(data, { transaction });
+          user = await User.create(updateData, { transaction });
           const roleData = {
             userId: user.id,
           };
