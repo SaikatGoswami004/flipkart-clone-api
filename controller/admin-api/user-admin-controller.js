@@ -2,11 +2,17 @@ const Validator = require("fastest-validator");
 const User = require("../../models/user-model");
 const { Op } = require("sequelize");
 const sequelize = require("../../utilities/database");
+const { userAttributes } = require("../../helpers/attributes-helpers");
 
 exports.getAlluser = async (request, response) => {
   try {
     // Preparing Data
     let data = {
+      ...basicListPaginationDataPrepare(
+        request.query.page,
+        request.query.size,
+        request.query.keywords
+      ),
       role: request.query.role,
     };
 
@@ -17,6 +23,7 @@ exports.getAlluser = async (request, response) => {
         optional: true,
         values: ["Consumer", "Administrator", "Saler"],
       },
+      ...basicListPaginationValidationSchema,
     };
 
     // Creating Validator Object And Validating
@@ -38,23 +45,7 @@ exports.getAlluser = async (request, response) => {
             },
           },
           order: [["createdAt", "desc"]],
-          attributes: [
-            ["id", "userId"],
-            [
-              sequelize.literal(
-                `IF(profileImage IS NOT NULL, CONCAT("${process.env.IMAGE_URL}", profileImage), profileImage)`
-              ),
-              "profileImage",
-            ],
-            "firstName",
-            "lastName",
-            "emailAddress",
-            "isEmailVerified",
-            "phoneCountryCode",
-            "phoneNumber",
-            "isPhoneVerified",
-            "userRole",
-          ],
+          attributes: userAttributes,
         });
         return response.status(200).json(users);
       } else {
@@ -66,23 +57,7 @@ exports.getAlluser = async (request, response) => {
             userRole: data.role,
           },
           order: [["createdAt", "desc"]],
-          attributes: [
-            ["id", "userId"],
-            [
-              sequelize.literal(
-                `IF(profileImage IS NOT NULL, CONCAT("${process.env.IMAGE_URL}", profileImage), profileImage)`
-              ),
-              "profileImage",
-            ],
-            "firstName",
-            "lastName",
-            "emailAddress",
-            "isEmailVerified",
-            "phoneCountryCode",
-            "phoneNumber",
-            "isPhoneVerified",
-            "userRole",
-          ],
+          attributes: userAttributes,
         });
         return response.status(200).json(users);
       }

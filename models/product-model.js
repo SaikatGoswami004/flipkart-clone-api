@@ -16,31 +16,28 @@ const Product = sequelize.define("product", {
   },
   name: {
     type: Sequelize.STRING,
-    allowNull: true,
-    defaultValue: null,
+    allowNull: false,
   },
   description: {
     type: Sequelize.STRING,
-    allowNull: true,
-    defaultValue: null,
+    allowNull: false,
   },
   brand: {
     type: Sequelize.STRING,
     allowNull: false,
   },
 
-  categoryId: {
+  productCategoryId: {
     allowNull: false,
     type: Sequelize.UUID,
   },
   price: {
-    type: Sequelize.DECIMAL(10, 2),
+    type: Sequelize.INTEGER,
     allowNull: false,
   },
   inventory: {
     type: Sequelize.INTEGER,
     allowNull: false,
-    defaultValue: 0,
   },
   ratings: {
     type: Sequelize.FLOAT,
@@ -50,9 +47,13 @@ const Product = sequelize.define("product", {
   numReviews: {
     type: Sequelize.INTEGER,
     allowNull: true,
-
     defaultValue: 0,
   },
+  isActive: {
+    type: Sequelize.BOOLEAN,
+    default: true,
+  },
+
   createdAt: {
     allowNull: false,
     defaultValue: Sequelize.fn("now"),

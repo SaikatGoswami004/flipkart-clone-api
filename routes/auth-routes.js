@@ -25,7 +25,7 @@ router.post("/forget-password/request-otp", authController.requestOTP);
 // reset password
 router.post("/forget-password/reset-password", authController.resetPassword);
 //Change Password
-//Change Password
+
 router.patch("/change-password", authMiddleware, authController.changePassword);
 
 module.exports = router;

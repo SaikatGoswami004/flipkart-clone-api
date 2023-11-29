@@ -1,20 +1,37 @@
 const Validator = require("fastest-validator");
 const sequelize = require("../../utilities/database");
-const ProductCategory = require("../../models/product-category-model");
+const Product = require("../../models/product-model");
 const { Op } = require("sequelize");
 const {
+  productAttributes,
   productCategoryAttributes,
-  basicListPaginationValidationSchema,
   basicListPaginationDataPrepare,
+  basicListPaginationValidationSchema,
 } = require("../../helpers/attributes-helpers");
+const ProductCategory = require("../../models/product-category-model");
+const crypto = require("crypto");
+const path = require("path");
 
-exports.createProductCategory = async (request, response) => {
+exports.createProduct = async (request, response) => {
   try {
-    // // Preparing Data
+    // check isActive param
+    if (request.body.isActive && request.body.isActive === "true") {
+      request.body.isActive = true;
+    } else {
+      request.body.isActive = false;
+    }
+    // Preparing Data
     let data = {
       name: request.body.name,
       description: request.body.description,
+      brand: request.body.brand,
+      price: Number(request.body.price),
+      productCategoryId: request.body.productCategoryId,
+      inventory: Number(request.body.inventory),
+
+      isActive: request.body.isActive,
     };
+
     // // Preparing Validation Schema
     const schema = {
       name: {
@@ -23,8 +40,29 @@ exports.createProductCategory = async (request, response) => {
       },
       description: {
         type: "string",
-        optional: true,
-        default: null,
+        optional: false,
+      },
+      brand: {
+        type: "string",
+        optional: false,
+      },
+
+      productCategoryId: {
+        type: "uuid",
+        optional: false,
+      },
+      price: {
+        type: "number",
+        positive: true,
+        optional: false,
+      },
+      inventory: {
+        type: "number",
+        optional: false,
+      },
+      isActive: {
+        type: "boolean",
+        optional: false,
       },
     };
     // // Creating Validator Object And Validating
@@ -39,63 +77,72 @@ exports.createProductCategory = async (request, response) => {
     } else {
       const transaction = await sequelize.transaction();
       try {
-        const productCategoryId = request.params.productCategoryId || null;
-        let productCategory = null;
+        const productId = request.params.productId || null;
+        let product = null;
 
-        // Duplicate Product Category Check Match Variable
-        const duplicateMatchParam = {
-          name: data.name,
-        };
-
-        // Check Whether Product Category ID Valid
-        if (productCategoryId) {
-          productCategory = await ProductCategory.findOne({
+        // Check Whether Product ID Valid
+        if (productId) {
+          product = await Product.findOne({
             where: {
-              id: productCategoryId,
+              id: productId,
             },
           });
 
-          if (!productCategory) {
+          if (!productId) {
             return response.status(404).json({
-              message: "Product category does not exists!",
+              message: "Product does not exists!",
             });
           }
-          // Add Exception For Current ID In Duplicate Check
-          Object.assign(duplicateMatchParam, {
-            id: {
-              [Op.ne]: productCategoryId,
-            },
-          });
         }
-        // Duplicate Name Checking
-        const duplicateCategory = await ProductCategory.findOne({
-          where: duplicateMatchParam,
-        });
-        if (duplicateCategory) {
-          return response.status(409).json({
-            message: "Product Category should not be duplicate!",
-          });
-        }
+
         // Prepare Data For Update Or Create
         const updateData = {
           name: data.name,
           description: data.description,
+          brand: data.brand,
+          productCategoryId: data.productCategoryId,
+          price: data.price,
+          inventory: data.inventory,
+          isActive: data.isActive,
         };
-        // Insert Or Update Product Category Into DB
+        // Upload image If Provided
+        if (request.files["productImage"]) {
+          // Generate Dynamic File Name And Save The Image Into S3 Storage
+          const customFileName = crypto.randomBytes(18).toString("hex");
+          const imageBufferData = request.files["productImage"][0].buffer;
+          const imageExtension = path.extname(
+            request.files["productImage"][0].originalname
+          );
+          const imageFileName =
+            `flipcart-clone/product/` + customFileName + imageExtension;
+          const mimeType = request.files["productImage"][0].mimetype;
+          // Save To S3
+          const params = {
+            Key: imageFileName,
+            Body: imageBufferData,
+            ACL: "public-read",
+            contentType: mimeType,
+          };
 
-        if (productCategory) {
-          await ProductCategory.update(updateData, {
-            where: { id: productCategoryId },
+          Object.assign(updateData, {
+            productImage: params.Key,
+          });
+        }
+
+        // Insert Or Update Product  Into DB
+        if (product) {
+          await Product.update(updateData, {
+            where: { id: productId },
           });
           await transaction.commit();
         } else {
-          await ProductCategory.create(updateData);
+          await Product.create(updateData);
           await transaction.commit();
         }
 
         // Return Response
-        return response.status(productCategoryId ? 200 : 201).json({
-          message: "Product category successfully saved.",
+        return response.status(productId ? 200 : 201).json({
+          message: "Product successfully saved.",
         });
       } catch (error) {
         // Log Error And Return Response
@@ -110,7 +157,7 @@ exports.createProductCategory = async (request, response) => {
   } catch (error) {
     // Log Error And Return Response
     console.log(
-      "admin-api -> product-category-admin-controller -> createProductCategory -> ",
+      "admin-api -> product-admin-controller -> createProduct -> ",
       error
     );
     return response.status(500).json({
@@ -119,17 +166,16 @@ exports.createProductCategory = async (request, response) => {
     });
   }
 };
-
-exports.deleteProductCategory = async (request, response) => {
+exports.deleteProduct = async (request, response) => {
   try {
     // Preparing Data
     let data = {
-      productCategoryId: request.params.productCategoryId,
+      productId: request.params.productId,
     };
 
     // Preparing Validation Schema
     const schema = {
-      productCategoryId: {
+      productId: {
         type: "uuid",
         optional: false,
       },
@@ -148,26 +194,26 @@ exports.deleteProductCategory = async (request, response) => {
     } else {
       try {
         const transaction = await sequelize.transaction();
-        const productCategory = await ProductCategory.findOne({
+        const product = await Product.findOne({
           where: {
-            id: data.productCategoryId,
+            id: data.productId,
           },
         });
-        if (!productCategory) {
+        if (!product) {
           return response.status(404).json({
-            message: "Product Category does not exists!",
+            message: "Product does not exists!",
           });
         }
-        await ProductCategory.destroy({
+        await Product.destroy({
           where: {
-            id: data.productCategoryId,
+            id: data.productId,
           },
         });
         // Commit The DB Transaction
         transaction.commit();
 
         return response.status(200).json({
-          message: "Product Category Delete Successfully!!",
+          message: "Product Delete Successfully!!",
         });
       } catch (error) {
         // Rollback The DB Transaction
@@ -183,7 +229,7 @@ exports.deleteProductCategory = async (request, response) => {
   } catch (error) {
     // Log Error And Return Response
     console.log(
-      "admin-api -> product-category-admin-controller -> deleteProductCategory -> ",
+      "admin-api -> product-admin-controller -> deleteProduct -> ",
       error
     );
     return response.status(500).json({
@@ -192,16 +238,17 @@ exports.deleteProductCategory = async (request, response) => {
     });
   }
 };
-exports.getProductCategory = async (request, response) => {
+
+exports.getProduct = async (request, response) => {
   try {
     // Preparing Data
     let data = {
-      productCategoryId: request.params.productCategoryId,
+      productId: request.params.productId,
     };
 
     // Preparing Validation Schema
     const schema = {
-      productCategoryId: {
+      productId: {
         type: "uuid",
         optional: false,
       },
@@ -218,23 +265,28 @@ exports.getProductCategory = async (request, response) => {
         errors: validationResponse,
       });
     } else {
-      const category = await ProductCategory.findOne({
+      const product = await Product.findOne({
         where: {
-          id: data.productCategoryId,
+          id: data.productId,
         },
-        attributes: productCategoryAttributes,
+        attributes: productAttributes,
+        include: {
+          model: ProductCategory,
+          as: "productCategory",
+          attributes: productCategoryAttributes,
+        },
       });
-      if (!category) {
+      if (!product) {
         return response.status(400).json({
-          message: "Product Category Not Found!",
+          message: "Product Not Found!",
         });
       }
-      return response.status(200).json(category);
+      return response.status(200).json(product);
     }
   } catch (error) {
     // Log Error And Return Response
     console.log(
-      "admin-api -> product-category-admin-controller -> getProductCatagory -> ",
+      "admin-api -> product-admin-controller -> getProduct -> ",
       error
     );
     return response.status(500).json({
@@ -243,7 +295,7 @@ exports.getProductCategory = async (request, response) => {
     });
   }
 };
-exports.getProductCategorys = async (request, response) => {
+exports.getProducts = async (request, response) => {
   try {
     const data = basicListPaginationDataPrepare(
       request.query.page,
@@ -276,7 +328,12 @@ exports.getProductCategorys = async (request, response) => {
       }
 
       const options = {
-        attributes: productCategoryAttributes,
+        attributes: productAttributes,
+        include: {
+          model: ProductCategory,
+          as: "productCategory",
+          attributes: productCategoryAttributes,
+        },
         distinct: true,
         limit: size,
         offset: page * size,
@@ -296,14 +353,14 @@ exports.getProductCategorys = async (request, response) => {
         });
       }
 
-      const categorys = await ProductCategory.findAndCountAll(options);
-      if (!categorys) {
+      const products = await Product.findAndCountAll(options);
+      if (!products) {
         return response.status(400).json({
-          message: "Product Category Not Found!",
+          message: "Product Not Found!",
         });
       }
       // Send Response
-      const totalItems = Number.parseInt(categorys.count);
+      const totalItems = Number.parseInt(products.count);
       response.status(200).json({
         pagination: {
           totalItems: totalItems,
@@ -311,13 +368,13 @@ exports.getProductCategorys = async (request, response) => {
           currentPage: page + 1,
           lastPage: Math.ceil(totalItems / size),
         },
-        categorys: categorys.rows,
+        products: products.rows,
       });
     }
   } catch (error) {
     // Log Error And Return Response
     console.log(
-      "admin-api -> product-category-admin-controller -> getProductCatagorys -> ",
+      "admin-api -> product-admin-controller -> getProducts -> ",
       error
     );
     return response.status(500).json({
